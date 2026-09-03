@@ -221,25 +221,20 @@ pub fn menu_item_enabled(
     clicked
 }
 
-pub fn menu_separator(ui: &mut Ui, palette: &Palette) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 9.0), Sense::hover());
-    ui.painter().hline(
-        rect.x_range().shrink(6.0),
-        rect.center().y,
-        Stroke::new(1.0, palette.outline),
-    );
+pub fn menu_separator(ui: &mut Ui, _palette: &Palette) {
+    ui.add_space(4.0);
 }
 
 /// The frame every popup menu uses.
 pub fn menu_frame(palette: &Palette) -> egui::Frame {
     egui::Frame::new()
-        .fill(palette.overlay)
-        .stroke(Stroke::new(1.0, palette.outline))
+        .fill(palette.surface_container_highest)
+        .stroke(Stroke::NONE)
         .corner_radius(CornerRadius::same(theme::RADIUS))
         .inner_margin(egui::Margin::same(6))
         .shadow(egui::epaint::Shadow {
-            offset: [0, 6],
-            blur: 20,
+            offset: [0, 8],
+            blur: 28,
             spread: 0,
             color: palette.shadow,
         })
@@ -679,18 +674,14 @@ pub fn track_row(ui: &mut Ui, app: &mut App, row: TrackRow<'_>) -> Option<RowPic
         // it, so the pointer is never lost inside the block.
         ui.painter().rect_filled(
             rect,
-            CornerRadius::same(6),
-            palette
-                .accent
-                .gamma_multiply(if hovered { 0.30 } else { 0.20 }),
+            CornerRadius::same(theme::RADIUS),
+            palette.primary_container,
         );
     } else if hovered {
         ui.painter().rect_filled(
             rect,
-            CornerRadius::same(6),
-            palette
-                .surface_hover
-                .gamma_multiply(if palette.dark { 0.7 } else { 1.0 }),
+            CornerRadius::same(theme::RADIUS),
+            palette.surface_container_high,
         );
     }
     let cols = columns(width, &row);
@@ -745,7 +736,7 @@ pub fn track_row(ui: &mut Ui, app: &mut App, row: TrackRow<'_>) -> Option<RowPic
             &palette,
             row.item.image(64),
             cover_rect,
-            4.0,
+            8.0,
             if row.item.is_track() {
                 Icon::Music
             } else {
@@ -1499,17 +1490,18 @@ pub fn card(
     let mut play = false;
     if ui.is_rect_visible(rect) {
         let hovered = ui.rect_contains_pointer(rect);
-        if hovered {
-            ui.painter().rect_filled(
-                rect,
-                CornerRadius::same(theme::RADIUS),
-                palette
-                    .surface_hover
-                    .gamma_multiply(if palette.dark { 0.8 } else { 1.0 }),
-            );
-        }
+        let card_fill = if hovered {
+            palette.surface_container_high
+        } else {
+            palette.surface_container
+        };
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(theme::RADIUS_LARGE),
+            card_fill,
+        );
         let image_rect = Rect::from_min_size(rect.min + vec2(PAD, PAD), Vec2::splat(image_size));
-        let radius = if round { image_size / 2.0 } else { 6.0 };
+        let radius = if round { image_size / 2.0 } else { 12.0 };
         paint_shadow(ui, &palette, image_rect, radius);
         paint_cover(
             ui,
@@ -1694,7 +1686,7 @@ pub fn thin_slider(
     accent: Color32,
     wheel_step: Option<f32>,
 ) -> SliderEvent {
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 16.0), Sense::click_and_drag());
+    let (rect, response) = ui.allocate_exact_size(vec2(width, 28.0), Sense::click_and_drag());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     let dragging_value = ui.data(|data| data.get_temp::<f32>(id));
     let pointer_value = response
@@ -1727,26 +1719,255 @@ pub fn thin_slider(
         SliderEvent::Committed(v) => *v,
         SliderEvent::None => dragging_value.unwrap_or(value),
     };
+
     if ui.is_rect_visible(rect) {
-        let active = response.hovered() || response.dragged() || dragging_value.is_some();
-        let bar = Rect::from_center_size(rect.center(), vec2(rect.width(), 4.0));
-        let track_color = if palette.dark {
-            Color32::from_white_alpha(50)
+        let cy = rect.center().y;
+        let start_x = rect.left() + 4.0;
+        let end_x = rect.right() - 4.0;
+        let track_len = end_x - start_x;
+
+        // Smooth handle animation (no snapping)
+        let anim_val_id = id.with("smooth_vol_val");
+        let prev_val = ui.data(|d| d.get_temp::<f32>(anim_val_id)).unwrap_or(shown);
+        let current_val = if response.dragged() || dragging_value.is_some() {
+            ui.data_mut(|d| d.insert_temp(anim_val_id, shown));
+            shown
         } else {
-            Color32::from_black_alpha(40)
+            let diff = shown - prev_val;
+            if diff.abs() > 0.001 {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+                let next = prev_val + diff * 0.22;
+                ui.data_mut(|d| d.insert_temp(anim_val_id, next));
+                next
+            } else {
+                shown
+            }
         };
-        ui.painter().rect_filled(bar, 2.0, track_color);
-        let filled = Rect::from_min_max(
-            bar.min,
-            pos2(bar.left() + bar.width() * shown.clamp(0.0, 1.0), bar.max.y),
-        );
-        let fill = if active { accent } else { palette.text };
-        ui.painter().rect_filled(filled, 2.0, fill);
-        if active {
-            ui.painter()
-                .circle_filled(pos2(filled.right(), bar.center().y), 6.0, palette.text);
+
+        let progress_x = (start_x + track_len * current_val.clamp(0.0, 1.0)).clamp(start_x, end_x);
+        let track_h = 12.0;
+        let gap_clearance = 6.5;
+        let handle_half_w = 2.5;
+
+        // 1. Left filled track: accent pill (Caelestia lineComp)
+        let filled_end = (progress_x - handle_half_w - gap_clearance).max(start_x);
+        if filled_end > start_x {
+            let filled_rect = Rect::from_min_max(
+                pos2(start_x, cy - track_h / 2.0),
+                pos2(filled_end, cy + track_h / 2.0),
+            );
+            ui.painter().rect_filled(
+                filled_rect,
+                CornerRadius::same((track_h / 2.0) as u8),
+                accent,
+            );
         }
+
+        // 2. Right remaining track: surface_container_highest pill with accent end dot
+        let remaining_start = (progress_x + handle_half_w + gap_clearance).min(end_x);
+        if remaining_start < end_x {
+            let rem_rect = Rect::from_min_max(
+                pos2(remaining_start, cy - track_h / 2.0),
+                pos2(end_x, cy + track_h / 2.0),
+            );
+            ui.painter().rect_filled(
+                rem_rect,
+                CornerRadius::same((track_h / 2.0) as u8),
+                palette.surface_container_highest,
+            );
+
+            // End dot at far right
+            if end_x - remaining_start > 12.0 {
+                let dot_center = pos2(end_x - 6.0, cy);
+                ui.painter().circle_filled(dot_center, 2.5, accent);
+            }
+        }
+
+        // 3. Handle: vertical pill matching Caelestia StyledSlider handle
+        let hovered = response.hovered();
+        let pressed = response.dragged() || dragging_value.is_some();
+        let hover_t = ui.ctx().animate_bool(id.with("vol_hover"), hovered);
+        let press_t = ui.ctx().animate_bool(id.with("vol_press"), pressed);
+
+        let handle_h = 22.0 + hover_t * 3.0 + press_t * 5.0;
+        let handle_rect = Rect::from_center_size(
+            pos2(progress_x, cy),
+            vec2(5.0, handle_h),
+        );
+        ui.painter().rect_filled(handle_rect, CornerRadius::same(3), accent);
     }
+    event
+}
+
+/// Material Design 3 wavy seek slider with squiggly sine wave matching Caelestia StyledSlider.
+pub fn wavy_slider(
+    ui: &mut Ui,
+    palette: &Palette,
+    id: egui::Id,
+    value: f32,
+    width: f32,
+    accent: Color32,
+    is_playing: bool,
+) -> SliderEvent {
+    let (rect, response) = ui.allocate_exact_size(vec2(width, 28.0), Sense::click_and_drag());
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let dragging_value = ui.data(|data| data.get_temp::<f32>(id));
+    let pointer_value = response
+        .interact_pointer_pos()
+        .map(|pos| ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0));
+    let mut event = SliderEvent::None;
+    if (response.drag_started() || response.dragged())
+        && let Some(v) = pointer_value
+    {
+        ui.data_mut(|data| data.insert_temp(id, v));
+        event = SliderEvent::Dragging(v);
+    }
+    if response.drag_stopped() {
+        let v = dragging_value.or(pointer_value).unwrap_or(value);
+        ui.data_mut(|data| data.remove::<f32>(id));
+        event = SliderEvent::Committed(v);
+    } else if response.clicked()
+        && let Some(v) = pointer_value
+    {
+        event = SliderEvent::Committed(v);
+    }
+    let shown = match &event {
+        SliderEvent::Dragging(v) => *v,
+        SliderEvent::Committed(v) => *v,
+        SliderEvent::None => dragging_value.unwrap_or(value),
+    };
+
+    if ui.is_rect_visible(rect) {
+        let cy = rect.center().y;
+        let start_x = rect.left() + 4.0;
+        let end_x = rect.right() - 4.0;
+        let track_len = end_x - start_x;
+
+        // Smooth handle glide animation (no snapping upon seeking or track start)
+        let anim_val_id = id.with("smooth_slider_val");
+        let prev_val = ui.data(|d| d.get_temp::<f32>(anim_val_id)).unwrap_or(shown);
+        let current_val = if response.dragged() || dragging_value.is_some() {
+            ui.data_mut(|d| d.insert_temp(anim_val_id, shown));
+            shown
+        } else {
+            let diff = shown - prev_val;
+            if diff.abs() > 0.0002 {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+                let next = prev_val + diff * 0.22;
+                ui.data_mut(|d| d.insert_temp(anim_val_id, next));
+                next
+            } else {
+                shown
+            }
+        };
+
+        let progress_x = (start_x + track_len * current_val.clamp(0.0, 1.0)).clamp(start_x, end_x);
+
+        let gap_clearance = 8.0;
+        let handle_half_w = 2.0;
+        let bar_h = 10.0;
+        let line_width = 7.5;
+        let amplitude = 5.0;
+
+        // 1. Remaining track (10px rounded pill track with end dot)
+        let remaining_start = (progress_x + handle_half_w + gap_clearance).min(end_x);
+        if remaining_start < end_x {
+            let rem_rect = Rect::from_min_max(
+                pos2(remaining_start, cy - bar_h / 2.0),
+                pos2(end_x, cy + bar_h / 2.0),
+            );
+            ui.painter().rect_filled(
+                rem_rect,
+                CornerRadius::same((bar_h / 2.0) as u8),
+                palette.surface_container_highest,
+            );
+
+            // End dot at the far right of the remaining track (from Caelestia StyledSlider.qml)
+            if end_x - remaining_start > 12.0 {
+                let dot_center = pos2(end_x - 6.0, cy);
+                ui.painter().circle_filled(dot_center, 2.5, accent);
+            }
+        }
+
+        // 2. Persistent phase tracking: pause freezes the wave, playing advances it
+        let phase_id = id.with("wavy_phase");
+        let time_id = id.with("wavy_time");
+        let current_time = ui.input(|i| i.time);
+        let mut phase = ui.data(|d| d.get_temp::<f64>(phase_id)).unwrap_or(0.0);
+        let last_time = ui.data(|d| d.get_temp::<f64>(time_id)).unwrap_or(current_time);
+        let dt = (current_time - last_time).clamp(0.0, 0.1);
+
+        if is_playing {
+            // Repaint at 60 FPS for continuous smooth animation
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+            phase = (phase + dt * 3.5) % (std::f64::consts::TAU);
+            ui.data_mut(|d| {
+                d.insert_temp(phase_id, phase);
+                d.insert_temp(time_id, current_time);
+            });
+        } else {
+            // When paused, freeze the phase in place
+            ui.data_mut(|d| {
+                d.insert_temp(time_id, current_time);
+            });
+        }
+
+        // 3. Wavy played track with rounded line caps and exact spacing matching right side
+        // Round line cap extends by line_width / 2.0. So wave end point must be offset by cap radius
+        // to leave exactly gap_clearance (8.0px) visible gap to the handle's left edge!
+        let cap_radius = line_width / 2.0;
+        let wave_end_x = (progress_x - handle_half_w - gap_clearance - cap_radius).max(start_x);
+        let wave_len = wave_end_x - start_x;
+        if wave_len > 4.0 {
+            // Dynamic wavelength: ~36px per wave cycle, scaling dynamically with window width!
+            let cycle_px = 36.0;
+            let frequency = (track_len / cycle_px).max(3.0) as f64;
+
+            let step = 2.0;
+            let count = ((wave_len / step) as usize) + 3;
+            let mut points = Vec::with_capacity(count);
+            let mut x = start_x;
+            while x <= wave_end_x {
+                let theta = (frequency * std::f64::consts::TAU * ((x - start_x) as f64) / (track_len.max(1.0) as f64) - phase) as f32;
+                let wave_y = cy + (amplitude * theta.sin()) as f32;
+                points.push(pos2(x, wave_y));
+                x += step;
+            }
+            if let Some(last) = points.last_mut() {
+                last.x = wave_end_x;
+                let theta = (frequency * std::f64::consts::TAU * ((wave_end_x - start_x) as f64) / (track_len.max(1.0) as f64) - phase) as f32;
+                last.y = cy + (amplitude * theta.sin()) as f32;
+            }
+
+            if points.len() >= 2 {
+                // Round line caps at start and end
+                let first_pt = points[0];
+                let last_pt = *points.last().unwrap();
+                ui.painter().circle_filled(first_pt, cap_radius, accent);
+                ui.painter().circle_filled(last_pt, cap_radius, accent);
+
+                ui.painter().add(egui::epaint::PathShape::line(
+                    points,
+                    Stroke::new(line_width, accent),
+                ));
+            }
+        } else if wave_len > 0.0 {
+            ui.painter().circle_filled(pos2(start_x, cy), cap_radius, accent);
+        }
+
+        // 4. M3 handle: vertical pill handle with gap from both sides
+        let handle_h = if response.hovered() || response.dragged() || dragging_value.is_some() {
+            26.0
+        } else {
+            22.0
+        };
+        let handle_rect = Rect::from_center_size(
+            pos2(progress_x, cy),
+            vec2(4.0, handle_h),
+        );
+        ui.painter().rect_filled(handle_rect, CornerRadius::same(2), accent);
+    }
+
     event
 }
 
@@ -1759,7 +1980,7 @@ pub fn chips<T: PartialEq + Copy>(
 ) -> Option<T> {
     let mut selected = None;
     ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 8.0;
+        ui.spacing_mut().item_spacing.x = 6.0;
         for (value, label) in options {
             if theme::soft_button(ui, palette, None, label, *value == current).clicked() {
                 selected = Some(*value);
@@ -1778,28 +1999,27 @@ pub fn search_field(
     hint: &str,
     width: f32,
 ) -> egui::Response {
-    let height = 34.0;
+    let height = 36.0;
     let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     let has_focus = ui.memory(|memory| memory.has_focus(id));
     let fill = if has_focus {
-        palette.surface_hover
+        palette.surface_container_highest
     } else {
-        palette.surface
+        palette.surface_container
     };
-    ui.painter().rect_filled(rect, height / 2.0, fill);
-    if has_focus {
-        ui.painter().rect_stroke(
-            rect,
-            height / 2.0,
-            Stroke::new(1.5, palette.text.gamma_multiply(0.6)),
-            egui::StrokeKind::Inside,
-        );
-    }
+    ui.painter().rect_filled(
+        rect,
+        CornerRadius::same((height / 2.0) as u8),
+        fill,
+    );
     let icon_rect =
-        Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), Vec2::splat(16.0));
-    Icon::Search
-        .image(palette.secondary, 16.0)
-        .paint_at(ui, icon_rect);
+        Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), Vec2::splat(18.0));
+    let icon_color = if has_focus {
+        palette.accent
+    } else {
+        palette.secondary
+    };
+    theme::paint_icon(ui, Icon::Search, icon_rect, 18.0, icon_color);
     let field_rect = Rect::from_min_max(
         pos2(rect.left() + 34.0, rect.top() + 1.0),
         pos2(rect.right() - 30.0, rect.bottom() - 1.0),

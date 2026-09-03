@@ -1,6 +1,6 @@
 //! The left panel: navigation and Your Library.
 
-use egui::{Align, CornerRadius, Frame, Layout, Margin, Rect, Sense, Vec2, pos2, vec2};
+use egui::{CornerRadius, Frame, Margin, Rect, Sense, Vec2, pos2, vec2};
 
 use crate::api::models::pick_image;
 use crate::app::App;
@@ -38,19 +38,17 @@ struct Entry {
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
-    // The traffic lights float over the top-left of the sidebar now, so the
-    // first nav row has to start below them.
-    let top = 12 + theme::titlebar_inset(ui.ctx()) as i8;
+    let top = 8 + theme::titlebar_inset(ui.ctx()) as i8;
     let panel = egui::Panel::left("sidebar")
         .resizable(true)
         .default_size(app.settings.sidebar_width)
-        .size_range(210.0..=440.0)
+        .size_range(160.0..=500.0)
         .show_separator_line(false)
-        .frame(Frame::new().fill(palette.panel).inner_margin(Margin {
+        .frame(Frame::new().fill(palette.window).inner_margin(Margin {
             left: 12,
             right: 8,
             top,
-            bottom: 8,
+            bottom: 12,
         }));
     let response = panel.show(ui, |ui| {
         art_panel(app, ui);
@@ -59,6 +57,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let width = response.response.rect.width();
     if (width - app.settings.sidebar_width).abs() > 1.0 {
         app.settings.sidebar_width = width;
+    }
+    if response.response.drag_stopped() {
         app.actions.push(Action::SettingsChanged);
     }
 }
@@ -262,25 +262,7 @@ fn nav_row(
     label: &str,
     active: bool,
 ) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::click());
-    if ui.is_rect_visible(rect) {
-        let color = if active || response.hovered() {
-            palette.text
-        } else {
-            palette.secondary
-        };
-        let icon_rect =
-            Rect::from_center_size(pos2(rect.left() + 22.0, rect.center().y), Vec2::splat(22.0));
-        icon.image(color, 22.0).paint_at(ui, icon_rect);
-        ui.painter().text(
-            pos2(rect.left() + 46.0, rect.center().y),
-            egui::Align2::LEFT_CENTER,
-            label,
-            theme::bold(15.0),
-            color,
-        );
-    }
-    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+    theme::astra_nav_row(ui, palette, icon, label, None, active)
 }
 
 fn contents(app: &mut App, ui: &mut egui::Ui) {
@@ -293,12 +275,9 @@ fn contents(app: &mut App, ui: &mut egui::Ui) {
     if nav_row(ui, &palette, Icon::Search, "Search", page == Page::Search).clicked() {
         app.actions.push(Action::FocusSearch);
     }
-    ui.add_space(10.0);
-    ui.painter().hline(
-        ui.max_rect().x_range().shrink(4.0),
-        ui.cursor().top(),
-        egui::Stroke::new(1.0, palette.outline),
-    );
+    if nav_row(ui, &palette, Icon::Heart, "Liked Songs", page == Page::LikedSongs).clicked() {
+        app.actions.push(Action::Open(Page::LikedSongs));
+    }
     ui.add_space(10.0);
 
     let filter_id = egui::Id::new("sidebar-filter");
@@ -311,59 +290,63 @@ fn contents(app: &mut App, ui: &mut egui::Ui) {
         .unwrap_or(false);
 
     ui.horizontal(|ui| {
-        ui.add_space(6.0);
-        theme::icon(ui, Icon::Library, 22.0, palette.secondary);
+        ui.spacing_mut().item_spacing.x = 4.0;
         ui.add_space(2.0);
-        theme::text(ui, "Your Library", theme::bold(15.0), palette.text);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            if theme::icon_button(
-                ui,
-                Icon::PanelLeft,
-                16.0,
-                palette.secondary,
-                palette.text,
-                super::keys::platform_shortcut("Hide sidebar (Ctrl+B)", "Hide sidebar (Cmd+B)"),
-            )
-            .clicked()
-            {
-                app.actions.push(Action::ToggleSidebar);
+        theme::icon(ui, Icon::Library, 18.0, palette.secondary);
+        let buttons_width = 3.0 * 26.0 + 8.0;
+        if ui.available_width() > buttons_width + 85.0 {
+            theme::text(ui, "Your Library", theme::bold(14.0), palette.text);
+        }
+
+        // Flexible spacer to right-align the three action buttons without any overlap or text truncation
+        let gap = (ui.available_width() - buttons_width).max(2.0);
+        ui.add_space(gap);
+
+        if theme::icon_button(
+            ui,
+            Icon::Search,
+            14.0,
+            palette.secondary,
+            palette.text,
+            "Search Your Library",
+        )
+        .clicked()
+        {
+            show_search = !show_search;
+            if show_search {
+                ui.memory_mut(|memory| memory.request_focus(egui::Id::new("sidebar-search")));
+            } else {
+                app.library.filter.clear();
             }
-            // One item never deserved a menu: the plus creates directly.
-            if theme::icon_button(
-                ui,
-                Icon::Plus,
-                16.0,
-                palette.secondary,
-                palette.text,
-                "Create a playlist",
-            )
-            .clicked()
-            {
-                app.actions.push(Action::ShowDialog(Dialog::CreatePlaylist {
-                    name: String::new(),
-                    public: false,
-                    add_uris: Vec::new(),
-                }));
-            }
-            if theme::icon_button(
-                ui,
-                Icon::Search,
-                16.0,
-                palette.secondary,
-                palette.text,
-                "Search Your Library",
-            )
-            .clicked()
-            {
-                show_search = !show_search;
-                if show_search {
-                    ui.memory_mut(|memory| memory.request_focus(egui::Id::new("sidebar-search")));
-                } else {
-                    app.library.filter.clear();
-                }
-            }
-        });
+        }
+        if theme::icon_button(
+            ui,
+            Icon::Plus,
+            14.0,
+            palette.secondary,
+            palette.text,
+            "Create a playlist",
+        )
+        .clicked()
+        {
+            app.actions.push(Action::ShowDialog(Dialog::CreatePlaylist {
+                name: String::new(),
+                public: false,
+                add_uris: Vec::new(),
+            }));
+        }
+        if theme::icon_button(
+            ui,
+            Icon::PanelLeft,
+            14.0,
+            palette.secondary,
+            palette.text,
+            super::keys::platform_shortcut("Hide sidebar (Ctrl+B)", "Hide sidebar (Cmd+B)"),
+        )
+        .clicked()
+        {
+            app.actions.push(Action::ToggleSidebar);
+        }
     });
     ui.add_space(6.0);
 
@@ -623,7 +606,7 @@ fn contents(app: &mut App, ui: &mut egui::Ui) {
 
     egui::ScrollArea::vertical()
         .id_salt("sidebar-list")
-        .auto_shrink([false, false])
+        .auto_shrink([true, false])
         .show(ui, |ui| {
             if loading {
                 super::widgets::loading_row(ui, &palette);
@@ -716,26 +699,23 @@ fn contents(app: &mut App, ui: &mut egui::Ui) {
                 let rect = rect.translate(vec2(0.0, shift));
                 if ui.is_rect_visible(rect) {
                     if active {
-                        ui.painter()
-                            .rect_filled(rect, CornerRadius::same(6), palette.surface);
+                        ui.painter().rect_filled(
+                            rect,
+                            CornerRadius::same(theme::RADIUS_SMALL + 2),
+                            palette.primary_container,
+                        );
                     } else if response.hovered() {
                         ui.painter().rect_filled(
                             rect,
-                            CornerRadius::same(6),
-                            palette.surface_hover.gamma_multiply(0.6),
+                            CornerRadius::same(theme::RADIUS_SMALL + 2),
+                            palette.surface_container_high,
                         );
                     }
                     if drop_hover {
                         ui.painter().rect_filled(
                             rect,
-                            CornerRadius::same(6),
-                            palette.accent.gamma_multiply(0.18),
-                        );
-                        ui.painter().rect_stroke(
-                            rect,
-                            CornerRadius::same(6),
-                            egui::Stroke::new(1.5, palette.accent),
-                            egui::StrokeKind::Inside,
+                            CornerRadius::same(theme::RADIUS_SMALL + 2),
+                            palette.accent.gamma_multiply(0.25),
                         );
                     }
                     let name_color = if playing {

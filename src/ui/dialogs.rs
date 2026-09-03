@@ -12,13 +12,13 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     };
     let palette = app.palette;
     let frame = Frame::new()
-        .fill(palette.overlay)
-        .stroke(Stroke::new(1.0, palette.outline))
-        .corner_radius(CornerRadius::same(theme::RADIUS + 4))
+        .fill(palette.surface_container)
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(theme::RADIUS_LARGE + 4))
         .inner_margin(Margin::same(24))
         .shadow(egui::epaint::Shadow {
-            offset: [0, 10],
-            blur: 40,
+            offset: [0, 12],
+            blur: 48,
             spread: 0,
             color: palette.shadow,
         });

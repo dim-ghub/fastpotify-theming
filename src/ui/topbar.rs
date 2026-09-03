@@ -23,12 +23,18 @@ fn nav_button(
         },
     );
     if ui.is_rect_visible(rect) {
-        let fill = if palette.dark {
-            egui::Color32::from_black_alpha(90)
+        let fill = if !enabled {
+            palette.surface_container.gamma_multiply(0.4)
+        } else if response.hovered() {
+            palette.surface_container_highest
         } else {
-            egui::Color32::from_black_alpha(20)
+            palette.surface_container_high
         };
-        ui.painter().circle_filled(rect.center(), 16.0, fill);
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(16),
+            fill,
+        );
         let color = if !enabled {
             palette.dim
         } else if response.hovered() {
@@ -36,7 +42,7 @@ fn nav_button(
         } else {
             palette.secondary
         };
-        theme::paint_icon(ui, icon, rect, 20.0, color);
+        theme::paint_icon(ui, icon, rect, 18.0, color);
     }
     if enabled {
         response
@@ -144,22 +150,29 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         )
                     })
                     .unwrap_or_default();
-                let (rect, response) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::click());
+                let font = theme::medium(13.0);
+                let text_galley = ui.painter().layout_no_wrap(crate::bidi::display_text(&name).into_owned(), font, palette.text);
+                let chip_width = 34.0 + text_galley.size().x + 22.0;
+                let (rect, response) = ui.allocate_exact_size(vec2(chip_width.min(220.0), 34.0), Sense::click());
                 if ui.is_rect_visible(rect) {
                     let fill = if response.hovered() {
-                        palette.surface_hover
+                        palette.surface_container_highest
                     } else {
-                        palette.surface
+                        palette.surface_container_high
                     };
-                    ui.painter().circle_filled(rect.center(), 18.0, fill);
-                    let inner = egui::Rect::from_center_size(rect.center(), Vec2::splat(28.0));
+                    ui.painter().rect_filled(
+                        rect,
+                        CornerRadius::same(17),
+                        fill,
+                    );
+                    let avatar_rect = egui::Rect::from_center_size(pos2(rect.left() + 17.0, rect.center().y), Vec2::splat(26.0));
                     match avatar.as_deref() {
                         Some(url) => super::widgets::paint_cover(
                             ui,
                             &palette,
                             Some(url),
-                            inner,
-                            14.0,
+                            avatar_rect,
+                            13.0,
                             Icon::User,
                         ),
                         None => {
@@ -170,16 +183,22 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                 .to_uppercase()
                                 .to_string();
                             ui.painter()
-                                .circle_filled(inner.center(), 14.0, palette.accent);
+                                .circle_filled(avatar_rect.center(), 13.0, palette.accent);
                             ui.painter().text(
-                                inner.center(),
+                                avatar_rect.center(),
                                 egui::Align2::CENTER_CENTER,
                                 initial,
-                                theme::bold(13.0),
+                                theme::bold(12.0),
                                 palette.on_accent,
                             );
                         }
                     }
+                    let text_pos = pos2(avatar_rect.right() + 6.0, rect.center().y - text_galley.size().y / 2.0);
+                    let text_clip = egui::Rect::from_min_max(pos2(avatar_rect.right() + 6.0, rect.top()), pos2(rect.right() - 18.0, rect.bottom()));
+                    let painter = ui.painter().with_clip_rect(text_clip.intersect(ui.clip_rect()));
+                    painter.galley(text_pos, text_galley, palette.text);
+                    let chevron_rect = egui::Rect::from_center_size(pos2(rect.right() - 10.0, rect.center().y), Vec2::splat(12.0));
+                    Icon::ChevronDown.image(palette.secondary, 12.0).paint_at(ui, chevron_rect);
                 }
                 let response = response
                     .on_hover_cursor(egui::CursorIcon::PointingHand)

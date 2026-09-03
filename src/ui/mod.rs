@@ -42,7 +42,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         toasts(app, ctx, 20.0);
         return;
     }
+    // Paint solid opaque background over the entire window so no gaps or transparent clear_color show wallpaper
+    ui.painter()
+        .rect_filled(ui.max_rect(), CornerRadius::ZERO, app.palette.window);
+
+    // Media controls panel at the bottom extends across the entire width of the outer frame
     player_bar::show(app, ui);
+
     if app.settings.sidebar_visible {
         sidebar::show(app, ui);
     }
@@ -56,7 +62,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     devices::popup(app, ctx);
     dialogs::show(app, ctx);
     widgets::drag_ghost(ctx, &app.palette);
-    toasts(app, ctx, theme::PLAYER_BAR_HEIGHT + 16.0);
+    toasts(app, ctx, theme::PLAYER_BAR_HEIGHT + 24.0);
 }
 
 fn page_tint(app: &mut App) -> Option<Color32> {
@@ -102,24 +108,39 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
     let tint = page_tint(app);
     egui::CentralPanel::default()
-        .frame(Frame::new().fill(palette.window))
+        .frame(Frame::new().fill(palette.window).inner_margin(Margin {
+            left: 4,
+            right: 12,
+            top: 10,
+            bottom: 12,
+        }))
         .show(ui, |ui| {
-            let rect = ui.max_rect();
+            let container_rect = ui.max_rect();
+            let bg_fill = palette.surface_container_low;
+            ui.painter().rect_filled(
+                container_rect,
+                CornerRadius::same(theme::RADIUS_LARGE),
+                bg_fill,
+            );
             if let Some(tint) = tint {
                 let strength = if matches!(
                     app.page(),
                     Page::Home | Page::Search | Page::Settings | Page::Queue
                 ) {
-                    0.45
+                    0.35
                 } else {
-                    0.85
+                    0.75
                 };
-                let top = blend(palette.window, tint, strength);
-                let header = Rect::from_min_size(rect.min, vec2(rect.width(), 340.0));
-                widgets::paint_vertical_gradient(ui, header, top, palette.window);
+                let top = blend(bg_fill, tint, strength);
+                let header = Rect::from_min_size(container_rect.min, vec2(container_rect.width(), 320.0));
+                widgets::paint_vertical_gradient(ui, header, top, bg_fill);
             }
             ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
+
+            // 1. Top bar inside the frame
             topbar::show(app, ui);
+
+            // 2. Scrollable page content taking the space of the container
             let page = app.page().clone();
             egui::ScrollArea::vertical()
                 .id_salt(("page", page.encode()))
@@ -130,7 +151,7 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
                             left: widgets::PAGE_PADDING as i8,
                             right: widgets::PAGE_PADDING as i8,
                             top: 4,
-                            bottom: 48,
+                            bottom: 16,
                         })
                         .show(ui, |ui| {
                             ui.set_min_width(ui.available_width());

@@ -166,6 +166,8 @@ pub struct App {
     pub palette: Palette,
     /// The last theme choice that was applied, to detect when it changes.
     applied_theme: Option<ThemeChoice>,
+    /// Last modified time of Caelestia's scheme.json for live sync.
+    last_caelestia_mtime: Option<std::time::SystemTime>,
     /// Available custom colour schemes scanned from the schemes directory.
     pub available_schemes: Vec<(String, theme::ColorScheme)>,
 
@@ -455,6 +457,7 @@ impl App {
             offline: false,
             palette: Palette::dark(),
             applied_theme: None,
+            last_caelestia_mtime: None,
             available_schemes: Vec::new(),
             auth: AuthStatus::Starting,
             user: None,
@@ -610,6 +613,14 @@ impl App {
         theme::install(ctx);
         ctx.add_bytes_loader(std::sync::Arc::new(self.backend.art().clone()));
         ctx.set_theme(match &self.settings.theme {
+            ThemeChoice::Caelestia => {
+                let dark = theme::load_caelestia_palette().map_or(true, |p| p.dark);
+                if dark {
+                    egui::ThemePreference::Dark
+                } else {
+                    egui::ThemePreference::Light
+                }
+            }
             ThemeChoice::Dark => egui::ThemePreference::Dark,
             ThemeChoice::Light => egui::ThemePreference::Light,
             ThemeChoice::System => egui::ThemePreference::System,
@@ -1810,28 +1821,51 @@ impl App {
 
     fn apply_theme(&mut self, ctx: &egui::Context) {
         let dark = ctx.theme() == egui::Theme::Dark;
-        let new_palette = match &self.settings.theme {
-            ThemeChoice::Dark => Some(Palette::dark()),
-            ThemeChoice::Light => Some(Palette::light()),
-            ThemeChoice::System => Some(if dark {
-                Palette::dark()
-            } else {
-                Palette::light()
-            }),
-            ThemeChoice::Custom(name) => self
-                .available_schemes
-                .iter()
-                .find(|(n, _)| n == name)
-                .map(|(_, scheme)| scheme.to_palette()),
+        let is_caelestia_available = theme::caelestia_scheme_path().is_some();
+        let is_caelestia = matches!(&self.settings.theme, ThemeChoice::Caelestia)
+            || (is_caelestia_available
+                && !matches!(
+                    &self.settings.theme,
+                    ThemeChoice::Light | ThemeChoice::Custom(_)
+                ));
+        let caelestia_mtime = if is_caelestia {
+            theme::caelestia_scheme_mtime()
+        } else {
+            None
+        };
+        let caelestia_changed = is_caelestia && caelestia_mtime != self.last_caelestia_mtime;
+
+        let new_palette = if is_caelestia && let Some(palette) = theme::load_caelestia_palette() {
+            Some(palette)
+        } else {
+            match &self.settings.theme {
+                ThemeChoice::Caelestia => {
+                    theme::load_caelestia_palette().or_else(|| Some(Palette::dark()))
+                }
+                ThemeChoice::Dark => Some(Palette::dark()),
+                ThemeChoice::Light => Some(Palette::light()),
+                ThemeChoice::System => Some(if dark {
+                    Palette::dark()
+                } else {
+                    Palette::light()
+                }),
+                ThemeChoice::Custom(name) => self
+                    .available_schemes
+                    .iter()
+                    .find(|(n, _)| n == name)
+                    .map(|(_, scheme)| scheme.to_palette()),
+            }
         };
         if let Some(palette) = new_palette
-            && self.applied_theme.as_ref() != Some(&self.settings.theme)
+            && (self.applied_theme.as_ref() != Some(&self.settings.theme) || caelestia_changed)
         {
             self.palette = palette;
             theme::apply(ctx, &self.palette);
             self.applied_theme = Some(self.settings.theme.clone());
+            self.last_caelestia_mtime = caelestia_mtime;
             self.accents.clear();
             self.accent_pending.clear();
+            ctx.request_repaint();
         }
     }
 
@@ -4901,6 +4935,14 @@ impl App {
             Action::SettingsChanged => {
                 self.settings_dirty = true;
                 ctx.set_theme(match &self.settings.theme {
+                    ThemeChoice::Caelestia => {
+                        let dark = theme::load_caelestia_palette().map_or(true, |p| p.dark);
+                        if dark {
+                            egui::ThemePreference::Dark
+                        } else {
+                            egui::ThemePreference::Light
+                        }
+                    }
                     ThemeChoice::Dark => egui::ThemePreference::Dark,
                     ThemeChoice::Light => egui::ThemePreference::Light,
                     ThemeChoice::System => egui::ThemePreference::System,
@@ -4918,6 +4960,7 @@ impl App {
                     }
                 });
                 self.available_schemes = self.load_schemes();
+                self.save_settings();
             }
             Action::RestartEngine => {
                 self.save_settings();

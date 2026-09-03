@@ -75,25 +75,29 @@ fn quick_access(app: &mut App, ui: &mut egui::Ui) {
                     break;
                 };
                 let (rect, response) =
-                    ui.allocate_exact_size(vec2(tile_width, 60.0), Sense::click());
+                    ui.allocate_exact_size(vec2(tile_width, 64.0), Sense::click());
                 if ui.is_rect_visible(rect) {
                     let hovered = ui.rect_contains_pointer(rect);
                     let fill = if hovered {
-                        palette.surface_hover
+                        palette.surface_container_high
                     } else {
-                        palette.surface
+                        palette.surface_container
                     };
-                    ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
-                    let cover = Rect::from_min_size(rect.min, Vec2::splat(60.0));
+                    ui.painter().rect_filled(
+                        rect,
+                        CornerRadius::same(theme::RADIUS_LARGE),
+                        fill,
+                    );
+                    let cover = Rect::from_min_size(rect.min + vec2(6.0, 6.0), Vec2::splat(52.0));
                     if *liked {
-                        super::sidebar::liked_cover(ui, cover, 6.0);
+                        super::sidebar::liked_cover(ui, cover, 10.0);
                     } else {
                         widgets::paint_cover(
                             ui,
                             &palette,
                             image.as_deref(),
                             cover,
-                            6.0,
+                            10.0,
                             Icon::Music,
                         );
                     }

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum ThemeChoice {
     #[default]
+    Caelestia,
     Dark,
     Light,
     System,
@@ -37,10 +38,11 @@ impl VisMode {
 }
 
 impl ThemeChoice {
-    pub const BUILTINS: [ThemeChoice; 3] = [Self::Dark, Self::Light, Self::System];
+    pub const BUILTINS: [ThemeChoice; 4] = [Self::Caelestia, Self::Dark, Self::Light, Self::System];
 
     pub fn label(&self) -> &str {
         match self {
+            Self::Caelestia => "Caelestia / Astra",
             Self::Dark => "Dark",
             Self::Light => "Light",
             Self::System => "Follow system",
@@ -167,7 +169,7 @@ impl Default for Settings {
             audio_buffer_ms: default_buffer_ms(),
             audio_cache: true,
             audio_cache_mb: 1024,
-            theme: ThemeChoice::Dark,
+            theme: ThemeChoice::Caelestia,
             accent_from_art: true,
             volume: (u16::MAX as u32 * 70 / 100) as u16,
             sidebar_visible: true,

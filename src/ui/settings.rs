@@ -22,13 +22,9 @@ fn section(
     theme::text(ui, title, theme::bold(18.0), palette.text);
     ui.add_space(8.0);
     Frame::new()
-        .fill(
-            palette
-                .surface
-                .gamma_multiply(if palette.dark { 0.7 } else { 1.0 }),
-        )
-        .stroke(Stroke::new(1.0, palette.outline))
-        .corner_radius(CornerRadius::same(theme::RADIUS + 2))
+        .fill(palette.surface_container)
+        .stroke(Stroke::NONE)
+        .corner_radius(CornerRadius::same(theme::RADIUS_LARGE))
         .inner_margin(Margin::symmetric(20, 16))
         .show(ui, |ui| {
             ui.set_width(ui.available_width().min(760.0));

@@ -731,7 +731,7 @@ impl eframe::App for Shell {
         {
             [0.0; 4]
         } else {
-            egui::Color32::from_rgba_unmultiplied(12, 12, 12, 180).to_normalized_gamma_f32()
+            egui::Color32::from_rgb(12, 12, 12).to_normalized_gamma_f32()
         }
     }
 
